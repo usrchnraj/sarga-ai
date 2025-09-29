@@ -34,7 +34,7 @@ def fetch_today_appointments():
     cur.close(); conn.close()
     return rows
 
-def call_n8n_first_webhook(audio_bytes, context):
+"""def call_n8n_first_webhook(audio_bytes, context):
     # n8n webhook 1 URL
     url = os.getenv("N8N_WEBHOOK_1")  # e.g., https://<your-n8n>/webhook/consultation/cliniclettergeneration
     files = {
@@ -42,6 +42,17 @@ def call_n8n_first_webhook(audio_bytes, context):
         "context": (None, json.dumps(context), "application/json"),
     }
     r = requests.post(url, files=files, timeout=60)
+    r.raise_for_status()
+    return r.json()"""
+
+def call_n8n_first_webhook(audio_bytes, context, mime="audio/webm", filename="note.webm"):
+    url = _sec("N8N_WEBHOOK_1")
+    headers = {"X-Webhook-Token": _sec("WEBHOOK_TOKEN")} if _sec("WEBHOOK_TOKEN") else {}
+    files = {
+        "audio_file": (filename, audio_bytes, mime),
+        "context": (None, json.dumps(context), "application/json"),
+    }
+    r = requests.post(url, files=files, headers=headers, timeout=60)
     r.raise_for_status()
     return r.json()
 
