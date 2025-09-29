@@ -8,12 +8,11 @@ from audio_recorder_streamlit import audio_recorder
 from utils import (
     fetch_today_appointments,
     call_n8n_first_webhook,
-    call_n8n_second_webhook,
+    call_n8n_second_webhook,  # compat: accepts letter_id OR full patient context
 )
 
 st.set_page_config(page_title="Appointments", layout="wide")
 
-# ---------- helpers ----------
 def _sec(k: str):
     try:
         return os.getenv(k) or st.secrets.get(k)
@@ -31,7 +30,6 @@ def _fmt_apt(r: dict) -> str:
         hhmm = "—"
     return f"{r['patient_name']} • {r['reason']} • {hhmm}"
 
-# ---------- CSS ----------
 st.markdown(
     """
     <style>
@@ -46,7 +44,7 @@ st.markdown(
 
 st.title("Appointments")
 
-# ---------- session ----------
+# session
 if "appointments" not in st.session_state:
     st.session_state["appointments"] = []
 if "consultation_id" not in st.session_state:
@@ -56,10 +54,8 @@ if "transcript" not in st.session_state:
 if "letter_draft" not in st.session_state:
     st.session_state["letter_draft"] = ""
 
-# ---------- layout ----------
 colL, colR = st.columns([1.25, 1])
 
-# LEFT
 with colL:
     st.subheader("Today's List")
 
@@ -71,7 +67,6 @@ with colL:
             st.error(f"Failed to load appointments: {e}")
 
     apts = st.session_state["appointments"]
-
     if not apts:
         st.info("No data loaded. Click **Refresh appointments** to fetch from Neon.")
         st.stop()
@@ -84,7 +79,6 @@ with colL:
         key="patient_radio",
     )
 
-# RIGHT
 with colR:
     st.subheader("Actions")
     st.caption("1) Record → 2) Get Draft → 3) Edit → 4) Approve & Send")
@@ -117,22 +111,28 @@ with colR:
             }
             resp = call_n8n_first_webhook(audio_bytes, ctx, mime="audio/wav", filename="note.wav")
 
-            # normalize keys from webhook-1
-            cid = resp.get("consultation_id") or resp.get("letter_id") or resp.get("id")
-            letter_html = resp.get("letter_draft") or resp.get("html") or resp.get("letter_html") or ""
+            # normalize for your current workflow (may not include id)
+            cid = (resp.get("consultation_id")
+                   or resp.get("letter_id")
+                   or resp.get("id")
+                   or None)
+            letter_html = (resp.get("letter_draft")
+                           or resp.get("html")
+                           or resp.get("letter_html")
+                           or "")
             transcript_text = resp.get("transcript") or resp.get("text") or ""
 
             st.session_state["consultation_id"] = cid
             st.session_state["transcript"] = transcript_text
             st.session_state["letter_draft"] = letter_html
 
-            if not cid:
-                st.warning("Draft received but missing consultation/letter id in response.")
             st.success("Draft generated.")
+            if not cid:
+                st.warning("Draft received but missing consultation/letter ID from workflow.")
         except Exception as e:
             st.error(f"Failed to generate draft: {e}")
 
-    # --- Review & Approve panel ---
+    # Review & Approve
     if st.session_state.get("letter_draft"):
         st.divider()
         st.subheader("Review & Approve")
@@ -153,15 +153,30 @@ with colR:
             key="letter_editor",
         )
 
+        can_send = _has_secret("N8N_WEBHOOK_2") and final_html.strip()
         if st.button(
             "Approve & Send (Email + WhatsApp)",
             type="primary",
             use_container_width=True,
             key="approve_send_btn",
-            disabled=not (_has_secret("N8N_WEBHOOK_2") and st.session_state.get("consultation_id") and final_html.strip()),
+            disabled=not can_send,
         ):
             try:
-                res2 = call_n8n_second_webhook(st.session_state["consultation_id"], final_html)
+                payload_ctx = {
+                    # send full context so Workflow 2 can work with or without letter_id
+                    "patient_id": selected["patient_id"],
+                    "patient_name": selected["patient_name"],
+                    "patient_email": selected["patient_email"],
+                    "patient_phone": selected["patient_phone"],
+                    "appointment_id": selected["appointment_id"],
+                    "doctor_id": "dr-001",
+                    "doctor_name": "Mr Rajesh Sharma",
+                }
+                res2 = call_n8n_second_webhook(
+                    letter_id=st.session_state.get("consultation_id"),
+                    final_letter_html=final_html,
+                    context=payload_ctx,
+                )
                 st.success("Letter sent. Email + WhatsApp notification done.")
             except Exception as e:
                 st.error(f"Send failed: {e}")
@@ -170,5 +185,6 @@ with colR:
             for k in ("consultation_id", "transcript", "letter_draft", "letter_editor"):
                 st.session_state.pop(k, None)
             st.rerun()
+
 
 
