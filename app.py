@@ -97,7 +97,7 @@ with colR:
         use_container_width=True,
         disabled=disabled_first,
         key="gen_draft_btn",
-    ):
+):
         try:
             ctx = {
                 "patient_id": selected["patient_id"],
@@ -111,24 +111,19 @@ with colR:
             }
             resp = call_n8n_first_webhook(audio_bytes, ctx, mime="audio/wav", filename="note.wav")
 
-            # normalize for your current workflow (may not include id)
-            cid = (resp.get("consultation_id")
-                   or resp.get("letter_id")
-                   or resp.get("id")
-                   or None)
-            letter_html = (resp.get("letter_draft")
-                           or resp.get("html")
-                           or resp.get("letter_html")
-                           or "")
+            # Use ONLY the webhook response; do not hit Neon here
+            cid = resp.get("consultation_id") or resp.get("letter_id") or resp.get("id")
+            letter_html = resp.get("letter_draft") or resp.get("html") or resp.get("letter_html") or ""
             transcript_text = resp.get("transcript") or resp.get("text") or ""
 
             st.session_state["consultation_id"] = cid
             st.session_state["transcript"] = transcript_text
             st.session_state["letter_draft"] = letter_html
 
-            st.success("Draft generated.")
-            if not cid:
-                st.warning("Draft received but missing consultation/letter ID from workflow.")
+            if cid:
+                st.success("Draft generated.")
+            else:
+                st.warning("Draft generated, but your workflow didn't return a letter ID. (No DB fallback to save Neon.)")
         except Exception as e:
             st.error(f"Failed to generate draft: {e}")
 
