@@ -1,5 +1,7 @@
 # app.py
-import os, json, datetime as dt
+import os
+import json
+import datetime as dt
 import streamlit as st
 from audio_recorder_streamlit import audio_recorder
 
@@ -11,15 +13,17 @@ from utils import (
 
 st.set_page_config(page_title="Appointments", layout="wide")
 
-# ---------- Tiny helpers ----------
-def _has_secret(k: str) -> bool:
+# ---------- helpers ----------
+def _sec(k: str):
     try:
-        return bool(os.getenv(k) or st.secrets.get(k))
+        return os.getenv(k) or st.secrets.get(k)
     except Exception:
-        return False
+        return None
+
+def _has_secret(k: str) -> bool:
+    return bool(_sec(k))
 
 def _fmt_apt(r: dict) -> str:
-    # r['start_time'] might be datetime or string; keep robust
     try:
         t = dt.datetime.fromisoformat(str(r["start_time"]))
         hhmm = t.strftime("%H:%M")
@@ -27,15 +31,14 @@ def _fmt_apt(r: dict) -> str:
         hhmm = "—"
     return f"{r['patient_name']} • {r['reason']} • {hhmm}"
 
-# ---------- CSS polish ----------
+# ---------- CSS ----------
 st.markdown(
     """
     <style>
       .block-container { padding-top: 2rem; }
       .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; background:#eef2ff; color:#4338ca; }
       .muted { color:#64748b; font-size:13px; }
-      .card { border-radius:16px; padding:16px; background:white; box-shadow:0 1px 3px rgba(16,24,40,.08); }
-      .btn-row { display:flex; gap:.5rem; }
+      .card { border-radius:16px; padding:16px; background:var(--background-color); box-shadow:0 1px 3px rgba(16,24,40,.08); }
     </style>
     """,
     unsafe_allow_html=True,
@@ -43,7 +46,7 @@ st.markdown(
 
 st.title("Appointments")
 
-# ---------- Session boot ----------
+# ---------- session ----------
 if "appointments" not in st.session_state:
     st.session_state["appointments"] = []
 if "consultation_id" not in st.session_state:
@@ -53,13 +56,14 @@ if "transcript" not in st.session_state:
 if "letter_draft" not in st.session_state:
     st.session_state["letter_draft"] = ""
 
+# ---------- layout ----------
 colL, colR = st.columns([1.25, 1])
 
-# ---------- LEFT: list & refresh ----------
+# LEFT
 with colL:
     st.subheader("Today's List")
 
-    if st.button("🔄 Refresh appointments", use_container_width=True):
+    if st.button("🔄 Refresh appointments", use_container_width=True, key="refresh_btn"):
         try:
             st.session_state["appointments"] = fetch_today_appointments()
             st.success(f"Loaded {len(st.session_state['appointments'])} appointments.")
@@ -70,7 +74,7 @@ with colL:
 
     if not apts:
         st.info("No data loaded. Click **Refresh appointments** to fetch from Neon.")
-        st.stop()  # stop rendering right column until we have data
+        st.stop()
 
     selected = st.radio(
         "Select a patient",
@@ -80,14 +84,13 @@ with colL:
         key="patient_radio",
     )
 
-# ---------- RIGHT: actions ----------
+# RIGHT
 with colR:
     st.subheader("Actions")
     st.caption("1) Record → 2) Get Draft → 3) Edit → 4) Approve & Send")
 
     st.write("### Voice Notes")
     st.caption("Click the mic, speak, click again to stop.")
-
     audio_bytes = audio_recorder(text="", pause_threshold=2.0)
 
     if audio_bytes:
@@ -113,41 +116,59 @@ with colR:
                 "consultation_type": "follow-up",
             }
             resp = call_n8n_first_webhook(audio_bytes, ctx, mime="audio/wav", filename="note.wav")
-            st.session_state["consultation_id"] = resp.get("consultation_id")
-            st.session_state["transcript"] = resp.get("transcript", "")
-            st.session_state["letter_draft"] = resp.get("letter_draft", "")
+
+            # normalize keys from webhook-1
+            cid = resp.get("consultation_id") or resp.get("letter_id") or resp.get("id")
+            letter_html = resp.get("letter_draft") or resp.get("html") or resp.get("letter_html") or ""
+            transcript_text = resp.get("transcript") or resp.get("text") or ""
+
+            st.session_state["consultation_id"] = cid
+            st.session_state["transcript"] = transcript_text
+            st.session_state["letter_draft"] = letter_html
+
+            if not cid:
+                st.warning("Draft received but missing consultation/letter id in response.")
             st.success("Draft generated.")
         except Exception as e:
             st.error(f"Failed to generate draft: {e}")
 
-    # ----- Draft review + approve -----
-    if st.session_state["consultation_id"]:
+    # --- Review & Approve panel ---
+    if st.session_state.get("letter_draft"):
         st.divider()
-        st.markdown(f"<span class='pill'>Draft • ID: {st.session_state['consultation_id']}</span>", unsafe_allow_html=True)
+        st.subheader("Review & Approve")
+
+        if st.session_state.get("consultation_id"):
+            st.markdown(
+                f"<span class='pill'>Draft • ID: {st.session_state['consultation_id']}</span>",
+                unsafe_allow_html=True,
+            )
 
         with st.expander("Voice Transcript", expanded=True):
-            st.write(st.session_state["transcript"] or "_No transcript returned_")
+            st.write(st.session_state.get("transcript") or "_No transcript returned_")
 
-        st.write("### Clinic Letter (Editable)")
         final_html = st.text_area(
-            "Letter HTML",
+            "Clinic Letter (HTML)",
             value=st.session_state["letter_draft"],
             height=360,
             key="letter_editor",
-            label_visibility="collapsed",
         )
 
-        disabled_second = not (_has_secret("N8N_WEBHOOK_2") and final_html.strip())
         if st.button(
             "Approve & Send (Email + WhatsApp)",
             type="primary",
             use_container_width=True,
-            disabled=disabled_second,
             key="approve_send_btn",
+            disabled=not (_has_secret("N8N_WEBHOOK_2") and st.session_state.get("consultation_id") and final_html.strip()),
         ):
             try:
                 res2 = call_n8n_second_webhook(st.session_state["consultation_id"], final_html)
                 st.success("Letter sent. Email + WhatsApp notification done.")
             except Exception as e:
                 st.error(f"Send failed: {e}")
+
+        if st.button("Reset draft", key="reset_draft_btn"):
+            for k in ("consultation_id", "transcript", "letter_draft", "letter_editor"):
+                st.session_state.pop(k, None)
+            st.rerun()
+
 
