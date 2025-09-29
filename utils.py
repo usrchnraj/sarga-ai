@@ -1,32 +1,36 @@
-import os, json, uuid, time
-import psycopg2
+import os, json, uuid, time, requests
+import streamlit as st
+import psycopg
 import psycopg2.extras
+from psycopg.rows import dict_row
 import requests
 from dotenv import load_dotenv; load_dotenv()
 
+def _sec(k):  # read from env or streamlit secrets
+    return os.getenv(k) or st.secrets.get(k)
+
 def get_db():
-    conn = psycopg2.connect(
-        host=os.getenv("PGHOST"),
-        dbname=os.getenv("PGDATABASE"),
-        user=os.getenv("PGUSER"),
-        password=os.getenv("PGPASSWORD"),
-        port=os.getenv("PGPORT","5432"),
+    return psycopg.connect(
+        host=_sec("PGHOST"),
+        dbname=_sec("PGDATABASE"),
+        user=_sec("PGUSER"),
+        password=_sec("PGPASSWORD"),
+        port=_sec("PGPORT") or "5432",
         sslmode="require",
     )
     return conn
 
 def fetch_today_appointments():
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("""
-      SELECT a.appointment_id, a.start_time, a.end_time, a.reason, a.fee_gbp, a.clinic_name,
-             p.patient_id, p.patient_name, p.patient_email, p.patient_phone, p.insurer
-      FROM appointments a
-      JOIN patients p ON p.patient_id = a.patient_id
-      WHERE date(a.start_time AT TIME ZONE 'Europe/London') = date(now() AT TIME ZONE 'Europe/London')
-      ORDER BY a.start_time ASC
-    """)
-    rows = cur.fetchall()
+    with get_db() as conn, conn.cursor(row_factory=dict_row) as cur:
+        cur.execute("""
+          SELECT a.appointment_id, a.start_time, a.end_time, a.reason, a.fee_gbp, a.clinic_name,
+                 p.patient_id, p.patient_name, p.patient_email, p.patient_phone, p.insurer
+          FROM appointments a
+          JOIN patients p ON p.patient_id = a.patient_id
+          WHERE date(a.start_time AT TIME ZONE 'Europe/London') = date(now() AT TIME ZONE 'Europe/London')
+          ORDER BY a.start_time ASC
+        """)
+        return cur.fetchall()
     cur.close(); conn.close()
     return rows
 
