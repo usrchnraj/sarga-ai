@@ -1,10 +1,10 @@
-import os, json, uuid, time, requests
-import streamlit as st
-import psycopg
-import psycopg2.extras
-from psycopg.rows import dict_row
-import requests
+import os, json, base64
 from dotenv import load_dotenv; load_dotenv()
+
+import streamlit as st
+import requests
+import psycopg
+from psycopg.rows import dict_row
 
 def _sec(k):  # read from env or streamlit secrets
     return os.getenv(k) or st.secrets.get(k)
@@ -53,9 +53,8 @@ def call_n8n_second_webhook(letter_id, final_html):
     return r.json()
 
 def get_letter_by_id(letter_id):
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("""SELECT * FROM ops_clinic_letter WHERE letter_id = %s""", (letter_id,))
-    row = cur.fetchone()
+    with get_db() as conn, conn.cursor(row_factory=dict_row) as cur:
+        cur.execute("SELECT * FROM ops_clinic_letter WHERE letter_id = %s", (letter_id,))
+        return cur.fetchone()
     cur.close(); conn.close()
     return row
