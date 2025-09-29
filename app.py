@@ -97,7 +97,7 @@ with colR:
         use_container_width=True,
         disabled=disabled_first,
         key="gen_draft_btn",
-):
+    ):
         try:
             ctx = {
                 "patient_id": selected["patient_id"],
