@@ -1,0 +1,24 @@
+<script>
+const start = async () => {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const rec = new MediaRecorder(stream);
+  const chunks = [];
+  rec.ondataavailable = e => chunks.push(e.data);
+  rec.onstop = e => {
+    const blob = new Blob(chunks, { type: 'audio/webm' });
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result.split(',')[1];
+      const event = new CustomEvent('FROM_RECORDER', { detail: { base64 }});
+      window.parent.document.dispatchEvent(event);
+    };
+    reader.readAsDataURL(blob);
+  };
+  rec.start();
+  window.rec = rec;
+}
+const stop = () => window.rec && window.rec.stop();
+</script>
+
+<button onclick="start()">Start</button>
+<button onclick="stop()">Stop</button>
