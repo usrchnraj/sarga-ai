@@ -3,4 +3,4 @@ psycopg[binary]==3.2.10
 requests==2.32.3
 python-dotenv==1.0.1
 audio-recorder-streamlit==0.0.8
-psycopg2==2.9.9
+psycopg2-binary==2.9.9

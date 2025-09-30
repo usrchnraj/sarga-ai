@@ -1,4 +1,12 @@
 import streamlit as st
+
+st.set_page_config(
+    page_title="Clinic Letter System",
+    page_icon="🏥",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
 import requests
 import json
 import pandas as pd
@@ -11,16 +19,7 @@ try:
     from psycopg2.extras import RealDictCursor
 except ImportError:
     psycopg2 = None  # Continue without database
-
-
-# Page configuration
-st.set_page_config(
-    page_title="Clinic Letter System",
-    page_icon="🏥",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
+    
 # Custom CSS for better UI
 st.markdown("""
 <style>
