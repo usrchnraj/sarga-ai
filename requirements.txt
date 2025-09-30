@@ -3,4 +3,6 @@ requests==2.32.3
 python-dotenv==1.0.1
 audio-recorder-streamlit==0.0.8
 psycopg2-binary==2.9.9
-rich==13.7.1
+
+# Force Rich version (ignore conflicting deps)
+rich==13.7.1 --no-deps
