@@ -92,7 +92,7 @@ with colR:
 
     disabled_first = not (audio_bytes and _has_secret("N8N_WEBHOOK_1"))
     if st.button(
-        "Generate Draft from Recording",
+        "Generate Clinic Letter",
         type="primary",
         use_container_width=True,
         disabled=disabled_first,
